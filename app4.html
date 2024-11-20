@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Language Letter Recognition</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+            background-color: #f0f0f0;
+        }
+        .container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .video-container, .processed-container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        canvas {
+            margin-top: 10px;
+            border: 1px solid #ccc;
+        }
+        #prediction {
+            font-size: 48px;
+            font-weight: bold;
+            margin: 20px 0;
+            color: #2c3e50;
+        }
+        .confidence-bar {
+            width: 300px;
+            height: 20px;
+            background-color: #ecf0f1;
+            margin: 10px auto;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .confidence-fill {
+            height: 100%;
+            background-color: #3498db;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        #status {
+            margin: 20px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #letterInfo {
+            font-size: 18px;
+            margin: 10px 0;
+            color: #7f8c8d;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        .model-info {
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #fff;
+            border-radius: 5px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sign Language Letter Recognition</h1>
+    <div class="model-info">
+        <h3>Model Architecture:</h3>
+        <p>Input (784) → Hidden1 (256) → Hidden2 (256) → Hidden3 (256) → Output (24)</p>
+    </div>
+    <div class="container">
+        <div class="video-container">
+            <h2>Camera Feed</h2>
+            <video id="video" width="400" height="300" autoplay></video>
+            <canvas id="videoCanvas" width="400" height="300" style="display: none;"></canvas>
+        </div>
+        <div class="processed-container">
+            <h2>Processed Image (28x28)</h2>
+            <canvas id="processedCanvas" width="200" height="200"></canvas>
+            <div id="prediction">Letter: -</div>
+            <div id="letterInfo">Make a hand sign in front of the camera</div>
+            <div class="confidence-bar">
+                <div class="confidence-fill"></div>
+            </div>
+            <div id="confidenceText">Confidence: 0%</div>
+        </div>
+    </div>
+    <div>
+        <button id="startBtn">Start Camera</button>
+        <button id="stopBtn">Stop Camera</button>
+    </div>
+    <div id="status">Loading model...</div>
+
+    <script>
+        // Global variables
+        let model;
+        let isProcessing = false;
+        let videoStream;
+        const letters = 'ABCDEFGHIKLMNOPQRSTUVWXY'; // Excluding J and Z
+
+        // Initialize necessary elements
+        const video = document.getElementById('video');
+        const videoCanvas = document.getElementById('videoCanvas');
+        const processedCanvas = document.getElementById('processedCanvas');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusDiv = document.getElementById('status');
+
+        // Sigmoid activation function
+        function sigmoid(z) {
+            return 1.0 / (1.0 + Math.exp(-Math.min(Math.max(z, -500), 500)));
+        }
+
+        // Forward propagation through all layers
+        function forwardPropagate(X) {
+            // Add bias term to input
+            const a1 = new Float32Array(X.length + 1);
+            a1[0] = 1; // Bias term
+            a1.set(X, 1);
+
+            // First hidden layer
+            const z2 = new Float32Array(model.Theta1.length);
+            const a2 = new Float32Array(model.Theta1.length + 1);
+            a2[0] = 1; // Bias term
+
+            for (let i = 0; i < model.Theta1.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < model.Theta1[i].length; j++) {
+                    sum += model.Theta1[i][j] * a1[j];
+                }
+                z2[i] = sum;
+                a2[i + 1] = sigmoid(sum);
+            }
+
+            // Second hidden layer
+            const z3 = new Float32Array(model.Theta2.length);
+            const a3 = new Float32Array(model.Theta2.length + 1);
+            a3[0] = 1; // Bias term
+
+            for (let i = 0; i < model.Theta2.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < model.Theta2[i].length; j++) {
+                    sum += model.Theta2[i][j] * a2[j];
+                }
+                z3[i] = sum;
+                a3[i + 1] = sigmoid(sum);
+            }
+
+            // Third hidden layer
+            const z4 = new Float32Array(model.Theta3.length);
+            const a4 = new Float32Array(model.Theta3.length + 1);
+            a4[0] = 1; // Bias term
+
+            for (let i = 0; i < model.Theta3.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < model.Theta3[i].length; j++) {
+                    sum += model.Theta3[i][j] * a3[j];
+                }
+                z4[i] = sum;
+                a4[i + 1] = sigmoid(sum);
+            }
+
+            // Output layer
+            const output = new Float32Array(model.Theta4.length);
+            for (let i = 0; i < model.Theta4.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < model.Theta4[i].length; j++) {
+                    sum += model.Theta4[i][j] * a4[j];
+                }
+                output[i] = sigmoid(sum);
+            }
+
+            return output;
+        }
+
+        // Process video frame
+        function processFrame() {
+            if (!isProcessing || !videoStream) return;
+
+            const vctx = videoCanvas.getContext('2d');
+            const pctx = processedCanvas.getContext('2d');
+
+            // Draw current video frame
+            vctx.drawImage(video, 0, 0, videoCanvas.width, videoCanvas.height);
+
+            // Get center crop of the image
+            const size = Math.min(videoCanvas.width, videoCanvas.height);
+            const x = (videoCanvas.width - size) / 2;
+            const y = (videoCanvas.height - size) / 2;
+
+            // Draw processed image
+            pctx.fillStyle = 'white';
+            pctx.fillRect(0, 0, processedCanvas.width, processedCanvas.height);
+            pctx.drawImage(videoCanvas,
+                          x, y, size, size,
+                          0, 0, processedCanvas.width, processedCanvas.height);
+
+            // Resize to 28x28 and convert to grayscale
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = 28;
+            tempCanvas.height = 28;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(processedCanvas, 0, 0, 28, 28);
+            const imageData = tempCtx.getImageData(0, 0, 28, 28);
+            const data = imageData.data;
+
+            // Convert to grayscale and normalize
+            const input = new Float32Array(784);
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = (data[i] + data[i + 1] + data[i + 2]) / 3;
+                input[i/4] = (255 - gray) / 255.0; // Invert and normalize
+            }
+
+            // Make prediction
+            const output = forwardPropagate(input);
+
+            // Find max probability and its index
+            let maxProb = 0;
+            let predictedIdx = 0;
+            output.forEach((prob, idx) => {
+                if (prob > maxProb) {
+                    maxProb = prob;
+                    predictedIdx = idx;
+                }
+            });
+
+            // Update UI
+            document.getElementById('prediction').textContent =
+                `Letter: ${letters[predictedIdx]}`;
+            document.querySelector('.confidence-fill').style.width =
+                `${maxProb * 100}%`;
+            document.getElementById('confidenceText').textContent =
+                `Confidence: ${(maxProb * 100).toFixed(1)}%`;
+
+            // Continue processing frames
+            requestAnimationFrame(processFrame);
+        }
+
+        // Camera control functions
+        async function startCamera() {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: 400,
+                        height: 300,
+                        facingMode: 'user'
+                    }
+                });
+                video.srcObject = videoStream;
+                isProcessing = true;
+                processFrame();
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                statusDiv.textContent = 'Camera is active';
+                statusDiv.style.backgroundColor = '#d5f5e3';
+            } catch (error) {
+                console.error('Error accessing camera:', error);
+                statusDiv.textContent = 'Error accessing camera: ' + error.message;
+                statusDiv.style.backgroundColor = '#f5b7b1';
+            }
+        }
+
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                videoStream = null;
+            }
+            isProcessing = false;
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            statusDiv.textContent = 'Camera stopped';
+            statusDiv.style.backgroundColor = '#f8f9f9';
+        }
+
+        // Initialize application
+        async function init() {
+            try {
+                // Load model parameters
+                const response = await fetch('sign_language_model.json');
+                model = await response.json();
+
+                // Setup event listeners
+                startBtn.addEventListener('click', startCamera);
+                stopBtn.addEventListener('click', stopCamera);
+                stopBtn.disabled = true;
+
+                statusDiv.textContent = 'Model loaded! Click "Start Camera" to begin.';
+                statusDiv.style.backgroundColor = '#d5f5e3';
+
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.textContent = 'Error loading model: ' + error.message;
+                statusDiv.style.backgroundColor = '#f5b7b1';
+            }
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>
