@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Sign Language Predictor</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f0f0f0;
+      }
+      .container {
+        background-color: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      .capture-area {
+        position: relative;
+        display: inline-block;
+      }
+      .capture-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 200px;
+        height: 200px;
+        border: 2px solid red;
+        box-sizing: border-box;
+        pointer-events: none;
+      }
+      .canvas-container {
+        display: inline-block;
+        margin: 10px;
+        text-align: center;
+      }
+      .canvas-label {
+        display: block;
+        margin-top: 5px;
+        font-size: 12px;
+        color: #666;
+      }
+      button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        padding: 10px 20px;
+        border-radius: 4px;
+        cursor: pointer;
+        margin: 5px;
+      }
+      .prediction-box {
+        display: inline-block;
+        width: 100px;
+        margin: 10px;
+        padding: 15px;
+        text-align: center;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        background: #f8f9fa;
+      }
+      .prediction-letter {
+        font-size: 48px;
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #007bff;
+      }
+      .prediction-confidence {
+        font-size: 14px;
+        color: #666;
+      }
+      .preview-canvas {
+        border: 1px solid #ddd;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Sign Language Predictor</h1>
+
+      <div class="capture-area">
+        <video id="videoElement" width="400" height="300" autoplay></video>
+        <div class="capture-overlay"></div>
+      </div>
+      <br />
+      <button onclick="captureImage()">Capture</button>
+
+      <div id="canvasContainer">
+        <div class="canvas-container">
+          <canvas
+            id="previewOriginal"
+            width="280"
+            height="280"
+            class="preview-canvas"
+          ></canvas>
+          <span class="canvas-label">Captured Quarter</span>
+        </div>
+        <div class="canvas-container">
+          <canvas
+            id="previewProcessed"
+            width="280"
+            height="280"
+            class="preview-canvas"
+          ></canvas>
+          <span class="canvas-label">Processed (28x28)</span>
+        </div>
+      </div>
+
+      <div id="result"></div>
+    </div>
+
+    <script>
+      const LETTERS = "ABCDEFGHIKLMNOPQRSTUVWXY";
+      const MODEL_CONFIG = {
+        input_size: 784,
+        hidden_size: 256,
+        output_size: 24,
+      };
+
+      let model = null;
+      let video = document.getElementById("videoElement");
+
+      // Initialize webcam
+      if (navigator.mediaDevices.getUserMedia) {
+        navigator.mediaDevices
+          .getUserMedia({ video: true })
+          .then(function (stream) {
+            video.srcObject = stream;
+          })
+          .catch(function (error) {
+            console.log("Something went wrong!", error);
+          });
+      }
+
+      // Load model
+      fetch("trained_model.json")
+        .then((response) => response.json())
+        .then((data) => {
+          model = data;
+          console.log("Model loaded");
+        })
+        .catch((error) => {
+          console.error("Error loading model:", error);
+          document.getElementById("result").innerHTML =
+            "Error loading model. Please check console.";
+        });
+
+      function captureImage() {
+        const originalCanvas = document.getElementById("previewOriginal");
+        const processedCanvas = document.getElementById("previewProcessed");
+        const originalCtx = originalCanvas.getContext("2d");
+        const processedCtx = processedCanvas.getContext("2d");
+
+        // Clear canvases
+        originalCtx.fillStyle = "white";
+        originalCtx.fillRect(0, 0, originalCanvas.width, originalCanvas.height);
+        processedCtx.fillStyle = "white";
+        processedCtx.fillRect(
+          0,
+          0,
+          processedCanvas.width,
+          processedCanvas.height
+        );
+
+        // // Disable image smoothing for sharper downscaling
+        // originalCtx.imageSmoothingEnabled = false;
+        processedCtx.imageSmoothingEnabled = false;
+
+        // Calculate quarter dimensions
+        const quarterWidth = 300;
+        const quarterHeight = 300;
+
+        // Create temporary canvas for initial capture
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = quarterWidth;
+        tempCanvas.height = quarterHeight;
+        const tempCtx = tempCanvas.getContext("2d");
+
+        // Capture top-left quarter
+        tempCtx.drawImage(
+          video,
+          0,
+          0,
+          quarterWidth,
+          quarterHeight, // Source
+          0,
+          0,
+          quarterWidth,
+          quarterHeight // Destination
+        );
+
+        // Display captured quarter
+        originalCtx.drawImage(
+          tempCanvas,
+          0,
+          0,
+          originalCanvas.width,
+          originalCanvas.height
+        );
+
+        // Create 28x28 version
+        const smallCanvas = document.createElement("canvas");
+        smallCanvas.width = 28;
+        smallCanvas.height = 28;
+        const smallCtx = smallCanvas.getContext("2d");
+        smallCtx.drawImage(tempCanvas, 0, 0, 28, 28);
+
+        // smallCtx.imageSmoothingEnabled = false;  // Disable smoothing here too
+
+        // Get image data and invert colors
+        let imageData = smallCtx.getImageData(0, 0, 28, 28);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          // Convert to grayscale and invert
+          const gray =
+            0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+          data[i] = data[i + 1] = data[i + 2] = gray;
+        }
+        smallCtx.putImageData(imageData, 0, 0);
+
+        // Display processed image
+        processedCtx.drawImage(
+          smallCanvas,
+          0,
+          0,
+          processedCanvas.width,
+          processedCanvas.height
+        );
+
+        // Convert to model input format
+        let modelInput = new Float32Array(28 * 28);
+        let processedData = smallCtx.getImageData(0, 0, 28, 28).data;
+
+        for (let i = 0; i < processedData.length; i += 4) {
+          modelInput[i / 4] = processedData[i] / 255.0;
+        }
+
+        // Make prediction
+        if (model) {
+          let predictions = predict(modelInput);
+          displayResult(predictions);
+        }
+      }
+
+      function displayDebugInfo(debugInfo) {
+        const debugDiv = document.createElement("div");
+        debugDiv.style.fontFamily = "monospace";
+        debugDiv.style.fontSize = "12px";
+        debugDiv.style.marginTop = "20px";
+        debugDiv.style.padding = "10px";
+        debugDiv.style.backgroundColor = "#f8f9fa";
+        debugDiv.style.borderRadius = "4px";
+
+        debugDiv.innerHTML = `
+        <div style="font-weight: bold;">Network Debug Info:</div>
+        <br>
+        Input (${MODEL_CONFIG.input_size} pixels):
+        • Range: [${debugInfo.input.min.toFixed(
+          3
+        )}, ${debugInfo.input.max.toFixed(3)}]
+        • Mean: ${debugInfo.input.mean.toFixed(3)}
+        • Active pixels: ${debugInfo.input.nonZero}
+        <br>
+        Hidden Layer (${MODEL_CONFIG.hidden_size} neurons):
+        • Pre-activation range: [${debugInfo.layer1.preActivation.min.toFixed(
+          3
+        )}, ${debugInfo.layer1.preActivation.max.toFixed(3)}]
+        • Pre-activation mean: ${debugInfo.layer1.preActivation.mean.toFixed(3)}
+        • Post-activation range: [${debugInfo.layer1.postActivation.min.toFixed(
+          3
+        )}, ${debugInfo.layer1.postActivation.max.toFixed(3)}]
+        • Active neurons: ${debugInfo.layer1.postActivation.active} of ${
+          MODEL_CONFIG.hidden_size
+        }
+        <br>
+        Output Layer (${MODEL_CONFIG.output_size} neurons):
+        • Pre-activation range: [${debugInfo.layer2.preActivation.min.toFixed(
+          3
+        )}, ${debugInfo.layer2.preActivation.max.toFixed(3)}]
+        • Pre-activation mean: ${debugInfo.layer2.preActivation.mean.toFixed(3)}
+        • Post-activation range: [${debugInfo.layer2.postActivation.min.toFixed(
+          3
+        )}, ${debugInfo.layer2.postActivation.max.toFixed(3)}]
+        • Confidence spread: ${(
+          debugInfo.layer2.postActivation.max -
+          debugInfo.layer2.postActivation.min
+        ).toFixed(3)}
+    `.replace(/\n/g, "<br>");
+
+        // Replace the previous debug info if it exists
+        const oldDebug = document.querySelector(".debug-info");
+        if (oldDebug) {
+          oldDebug.remove();
+        }
+        debugDiv.className = "debug-info";
+        document
+          .getElementById("result")
+          .parentNode.insertBefore(
+            debugDiv,
+            document.getElementById("result").nextSibling
+          );
+      }
+
+      function sigmoid(z) {
+        return 1 / (1 + Math.exp(-Math.min(Math.max(z, -500), 500)));
+      }
+
+      function predict(input) {
+        if (!model || !model.W1 || !model.W2) {
+          console.error("Model not properly loaded");
+          return [];
+        }
+
+        // Debug section for input
+        let debugInfo = {
+          input: {
+            min: Math.min(...input),
+            max: Math.max(...input),
+            mean: input.reduce((a, b) => a + b) / input.length,
+            nonZero: input.filter((x) => x > 0.1).length,
+          },
+        };
+
+        // First layer
+        let z1 = new Array(MODEL_CONFIG.hidden_size).fill(0);
+        for (let i = 0; i < MODEL_CONFIG.hidden_size; i++) {
+          for (let j = 0; j < MODEL_CONFIG.input_size; j++) {
+            z1[i] += model.W1[i][j] * input[j];
+          }
+          z1[i] += model.b1[i][0];
+        }
+        let a1 = z1.map(sigmoid);
+
+        // Debug for first layer
+        debugInfo.layer1 = {
+          preActivation: {
+            min: Math.min(...z1),
+            max: Math.max(...z1),
+            mean: z1.reduce((a, b) => a + b) / z1.length,
+          },
+          postActivation: {
+            min: Math.min(...a1),
+            max: Math.max(...a1),
+            mean: a1.reduce((a, b) => a + b) / a1.length,
+            active: a1.filter((x) => x > 0.5).length,
+          },
+        };
+
+        // Second layer
+        let z2 = new Array(MODEL_CONFIG.output_size).fill(0);
+        for (let i = 0; i < MODEL_CONFIG.output_size; i++) {
+          for (let j = 0; j < MODEL_CONFIG.hidden_size; j++) {
+            z2[i] += model.W2[i][j] * a1[j];
+          }
+          z2[i] += model.b2[i][0];
+        }
+        let a2 = z2.map(sigmoid);
+
+        // Debug for second layer
+        debugInfo.layer2 = {
+          preActivation: {
+            min: Math.min(...z2),
+            max: Math.max(...z2),
+            mean: z2.reduce((a, b) => a + b) / z2.length,
+          },
+          postActivation: {
+            min: Math.min(...a2),
+            max: Math.max(...a2),
+            mean: a2.reduce((a, b) => a + b) / a2.length,
+          },
+        };
+
+        // Create array of predictions with letters and probabilities
+        let predictions = Array.from(a2).map((prob, idx) => ({
+          letter: LETTERS[idx],
+          probability: prob,
+        }));
+
+        // Sort by probability
+        predictions.sort((a, b) => b.probability - a.probability);
+
+        // Display debug info
+        displayDebugInfo(debugInfo);
+
+        // Return top 3 predictions
+        return predictions.slice(0, 3);
+      }
+
+      function displayResult(predictions) {
+        const resultDiv = document.getElementById("result");
+
+        let html = "";
+        predictions.forEach((pred, i) => {
+          const backgroundColor = i === 0 ? "#e3f2fd" : "#f8f9fa";
+          const confidence = (pred.probability * 100).toFixed(1);
+
+          html += `
+                    <div class="prediction-box" style="background: ${backgroundColor}">
+                        <div class="prediction-letter">${pred.letter}</div>
+                        <div class="prediction-confidence">
+                            ${confidence}%
+                        </div>
+                    </div>`;
+        });
+
+        resultDiv.innerHTML = html;
+      }
+    </script>
+  </body>
+</html>

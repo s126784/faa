@@ -1,0 +1,482 @@
+\documentclass[times,final,english]{revdetua}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{pgfplots}
+\usepackage{colortbl}  % For coloring the cells if needed
+\usepackage{multirow}  % For multi-row labels
+\pgfplotsset{compat=1.17} % Adjust compatibility version if needed
+\usepackage{filecontents} % Allows inline data definition
+
+\begin{document}
+
+\title{Handwritten Sign Language Recognition Using Neural Networks}
+
+\author{Oleksandr Solovei}
+
+\maketitle
+
+\begin{abstract}
+This paper presents a neural network implementation for recognizing handwritten sign language letters using the Sign Language MNIST dataset. We develop a two-layer neural network with sigmoid activation functions, implementing mini-batch gradient descent with momentum and learning rate decay. Our approach demonstrates the effectiveness of traditional neural networks in handling image classification tasks, achieving 77.36\% accuracy in classifying hand gestures representing letters from the American Sign Language alphabet.
+\end{abstract}
+
+\begin{keywords}
+Sign Language Recognition, Neural Networks, Computer Vision, MNIST, Image Classification, Sigmoid Activation
+\end{keywords}
+
+\section{Introduction}
+
+Sign language is recognized as an important means of communication for the deaf and hard-of-hearing community \cite{cooper}. With the increasing integration of technology in daily communication, automated sign language recognition systems can significantly improve accessibility and inclusion.
+
+
+
+\subsection{Problem Statement}
+Our work focuses on developing a neural network model for recognizing American Sign Language (ASL) alphabet letters from grayscale images. This task presents several interesting challenges:
+\begin{itemize}
+    \item Capturing subtle differences between similar hand gestures
+    \item Handling variations in hand positioning and lighting
+    \item Distinguishing between signs that differ only in dynamic movement (hence the exclusion of letters 'J' and 'Z' which require motion)
+\end{itemize}
+
+\subsection{Dataset Description}
+The widely used MNIST dataset of handwritten digits \cite{lecun} has been adapted for American Sign Language gesture recognition.
+
+The dataset consists of:
+
+\begin{itemize}
+    \item Training set: 27,455 examples
+    \item Test set: 7,172 examples
+    \item Image size: 28×28 pixels (grayscale)
+    \item Number of classes: 24 (excluding 'J' and 'Z')
+\end{itemize}
+
+The dataset characteristics include:
+\begin{itemize}
+    \item Class distribution varies from 144 to 498 samples per class
+    \item Each image is centered around the hand gesture
+    \item Images captured under various lighting conditions and angles
+\end{itemize}
+
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=1.0\columnwidth, % Adjust width to fit into column
+    height=0.4\columnwidth, % Adjust height proportionally
+    bar width=6pt,
+    ybar,
+    symbolic x coords={A,B,C,D,E,F,G,H,I,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y},
+    xtick=data,
+    xticklabel style={rotate=45, anchor=east, font=\small},
+    ylabel style={font=\small},
+    xlabel style={font=\small},
+    ymin=0,
+    enlarge x limits=0.02
+]
+\addplot table[x=Label, y=Training, col sep=comma] {training_data.csv};
+\end{axis}
+\end{tikzpicture}
+\caption{Training Data Distribution Across Alphabetical Labels}
+\label{fig:training_data_distribution}
+\end{figure}
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=1.0\columnwidth, % Adjust width to fit into column
+    height=0.4\columnwidth, % Adjust height proportionally
+    bar width=6pt,
+    ybar,
+    symbolic x coords={A,B,C,D,E,F,G,H,I,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y},
+    xtick=data,
+    xticklabel style={rotate=45, anchor=east, font=\small},
+    ylabel style={font=\small},
+    xlabel style={font=\small},
+    ymin=0,
+    enlarge x limits=0.02
+]
+\addplot table[x=Label, y=Test, col sep=comma] {test_data.csv};
+\end{axis}
+\end{tikzpicture}
+\caption{Test Data Distribution Across Alphabetical Labels}
+\label{fig:test_data_distribution}
+\end{figure}
+
+\subsection{Data Preprocessing}
+Our preprocessing pipeline consists of the following steps:
+
+1. Normalization:
+\begin{equation}
+X_{normalized} = \frac{X}{255}
+\end{equation}
+This scales pixel values from [0, 255] to [0, 1], which:
+\begin{itemize}
+    \item Stabilizes gradient descent
+    \item Ensures consistent scale across features
+    \item Improves convergence during training
+\end{itemize}
+
+2. Label Encoding:
+\begin{itemize}
+    \item Original labels: integers from 0 to 23
+    \item Transformed into one-hot encoded vectors of length 24
+    \item Each vector has a single '1' at the position corresponding to the class
+\end{itemize}
+
+\subsection{Motivation}
+The choice of this particular problem and approach is motivated by several factors:
+\begin{itemize}
+    \item Practical Impact: Sign language recognition can significantly improve accessibility in various applications, from educational tools to communication aids.
+    \item Educational Value: The dataset provides a good balance between complexity and manageability, making it suitable for exploring neural network concepts.
+    \item Benchmark Potential: The standardized nature of the dataset allows for direct comparison with other approaches.
+    \item Real-world Applicability: The techniques developed can be extended to more complex sign language recognition tasks.
+\end{itemize}
+
+\section{Short Description of Implemented ML Models}
+
+Past research has proposed various approaches to gesture recognition, including computer vision \cite{garg, mitra} and the use of deep convolutional networks \cite{kurz2016using}.
+
+The key components of the neural network model implemented in this work are:
+\begin{itemize}
+\item \textbf{Input Layer}:
+- 784 input units corresponding to the 28x28 pixel grayscale images
+\item \textbf{Hidden Layer}:
+- 256 hidden units with sigmoid activation function
+- Helps the model capture more complex representations of the hand gesture features
+\item \textbf{Output Layer}:
+- 24 output units (one for each sign language letter)
+- Sigmoid activation function used to output class probabilities
+\end{itemize}
+
+The choice of a two-layer neural network architecture with a moderate number of hidden units provides a balance between model capacity and computational complexity. This configuration was selected to avoid overfitting while still allowing the model to learn meaningful features from the image data. The sigmoid activation function was used in both the hidden and output layers to introduce nonlinearity and produce probabilistic outputs, which is well-suited for multi-class classification tasks like sign language recognition.
+
+The hyperparameters, such as the batch size, learning rate, and regularization strength, were chosen through a systematic process of experimentation and validation to optimize the model's performance on the Sign Language MNIST dataset. This balanced approach aims to achieve competitive results while maintaining interpretability and efficiency compared to more complex deep learning architectures.
+
+
+\section{Mathematical Framework}
+
+\subsection{Data Preprocessing}
+Given an input image $\mathbf{X} \in \mathbb{R}^{784}$, we normalize the pixel values:
+
+$$\mathbf{X} = \frac{\mathbf{X}}{255}$$
+
+For labels $y \in \{0,\ldots,23\}$, we create one-hot encoded vectors $\mathbf{y} \in \{0,1\}^{24}$ where:
+
+$$[\mathbf{y}]_j = \begin{cases}
+1 & \text{if } j = y \\
+0 & \text{otherwise}
+\end{cases}$$
+
+\subsection{Network Architecture}
+Our neural network consists of:
+\begin{itemize}
+    \item Input layer: $\mathbf{X} \in \mathbb{R}^{784}$
+    \item Hidden layer: $\mathbf{A_1} \in \mathbb{R}^{256}$
+    \item Output layer: $\mathbf{A_2} \in \mathbb{R}^{24}$
+\end{itemize}
+
+\subsection{Forward Propagation}
+The forward propagation process is defined by:
+
+\begin{equation}
+\mathbf{Z_1} = \mathbf{W_1}\mathbf{X} + \mathbf{b_1}
+\end{equation}
+
+\begin{equation}
+\mathbf{A_1} = \sigma(\mathbf{Z_1}) = \frac{1}{1 + e^{-\mathbf{Z_1}}}
+\end{equation}
+
+\begin{equation}
+\mathbf{Z_2} = \mathbf{W_2}\mathbf{A_1} + \mathbf{b_2}
+\end{equation}
+
+\begin{equation}
+\mathbf{A_2} = \sigma(\mathbf{Z_2})
+\end{equation}
+
+where:
+\begin{itemize}
+    \item $\mathbf{W_1} \in \mathbb{R}^{256 \times 784}$ is the first layer weight matrix
+    \item $\mathbf{b_1} \in \mathbb{R}^{256}$ is the first layer bias vector
+    \item $\mathbf{W_2} \in \mathbb{R}^{24 \times 256}$ is the second layer weight matrix
+    \item $\mathbf{b_2} \in \mathbb{R}^{24}$ is the second layer bias vector
+\end{itemize}
+
+\subsection{Loss Function}
+We use binary cross-entropy loss with L2 regularization:
+
+\begin{align}
+J = & -\frac{1}{m} \sum_{i=1}^m \sum_{j=1}^{24} \big[ y_{i,j} \log(A_{2,i,j}) \nonumber \\
+    & \quad + (1-y_{i,j}) \log(1-A_{2,i,j}) \big] \nonumber \\
+    & + \frac{\lambda}{2m} \big( \|\mathbf{W_1}\|_F^2 + \|\mathbf{W_2}\|_F^2 \big)
+\end{align}
+
+where:
+\begin{itemize}
+    \item $m$ is the batch size
+    \item $\lambda$ is the regularization parameter
+    \item $\|\cdot\|_F$ denotes the Frobenius norm
+\end{itemize}
+
+\section{Parameter Initialization}
+
+We use modified Xavier initialization with scaling factors:
+
+\begin{equation}
+\epsilon_1 = \sqrt{\frac{6}{784 + 256}}
+\end{equation}
+
+\begin{equation}
+\epsilon_2 = \sqrt{\frac{6}{256 + 24}}
+\end{equation}
+
+The weights are initialized uniformly:
+\begin{equation}
+\mathbf{W_1} \sim U(-\epsilon_1, \epsilon_1)
+\end{equation}
+
+\begin{equation}
+\mathbf{W_2} \sim U(-\epsilon_2, \epsilon_2)
+\end{equation}
+
+Biases are initialized to zero:
+\begin{equation}
+\mathbf{b_1} = \mathbf{0}, \quad \mathbf{b_2} = \mathbf{0}
+\end{equation}
+
+\section{Backward Propagation}
+
+For the output layer:
+\begin{equation}
+dZ_2 = A_2 - Y
+\end{equation}
+
+\begin{equation}
+dW_2 = \frac{1}{m}dZ_2A_1^T + \frac{\lambda}{m}W_2
+\end{equation}
+
+\begin{equation}
+db_2 = \frac{1}{m}\sum_{i=1}^m dZ_2^{(i)}
+\end{equation}
+
+For the hidden layer:
+\begin{equation}
+dA_1 = W_2^T dZ_2
+\end{equation}
+
+\begin{equation}
+dZ_1 = dA_1 \odot A_1 \odot (1-A_1)
+\end{equation}
+
+\begin{equation}
+dW_1 = \frac{1}{m}dZ_1X^T + \frac{\lambda}{m}W_1
+\end{equation}
+
+\begin{equation}
+db_1 = \frac{1}{m}\sum_{i=1}^m dZ_1^{(i)}
+\end{equation}
+
+\section{Optimization}
+
+We use mini-batch gradient descent with momentum. The hyperparameters are:
+\begin{itemize}
+    \item Batch size: 64
+    \item Initial learning rate ($\alpha$): 0.1
+    \item Learning rate decay rate ($\delta$): 0.95 (every 50 steps)
+    \item Momentum coefficient ($\beta$): 0.9
+    \item L2 regularization parameter ($\lambda$): 0.01
+    \item Number of iterations: 100
+\end{itemize}
+
+The learning rate decay is implemented as:
+\begin{equation}
+\alpha_t = \alpha_0 \cdot \delta^{\lfloor t/k \rfloor}
+\end{equation}
+
+where $k = 50$ is the decay step size.
+
+Parameter updates with momentum:
+\begin{equation}
+v_W = \beta v_W - \alpha_t \frac{\partial J}{\partial W}
+\end{equation}
+
+\begin{equation}
+W := W + v_W
+\end{equation}
+
+\section{Implementation Results}
+
+\subsection{Analysis of Cost Function Trajectory and Convergence Behavior}
+
+\begin{figure}[h!]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+    width=0.5\textwidth, % Adjust width to fit
+    height=0.2\textwidth, % Adjust height proportionally
+    xmin=1, xmax=100, % Limits for iterations
+    ymin=0, ymax=4, % Limits for cost
+    grid=major,
+    thick,
+    mark=none,
+    axis lines=left,
+    legend pos=north east,
+    legend style={font=\small},
+]
+\addplot table[x=Iteration, y=Cost, col sep=comma] {cost_function.csv};
+\addlegendentry{Cost Function}
+\end{axis}
+\end{tikzpicture}
+\caption{Cost Function Trajectory Over Iterations}
+\label{fig:cost_function_trajectory}
+\end{figure}
+
+The cost function decreases steadily across iterations, which is a positive sign. This behavior indicates that the optimization process is effective, as the model is gradually minimizing the error.
+
+The cost function drops sharply from 3.88 to approximately 1.17. This significant decrease suggests that the model is quickly learning the fundamental patterns in the data during the early stages of training.
+
+\subsection{Confusion Matrix}
+
+\begin{table}[ht]
+\centering
+\caption{Confusion Matrix (Subset of Columns A to F)}
+\label{tab:confusion_matrix_subset_0}
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|}
+\hline
+\textbf{True\textbackslash Pred} & A & B & C & D & E & F \\ \hline
+A & 331 & 0 & 0 & 0 & 0 & 0 \\ \hline
+B & 0 & 396 & 0 & 15 & 0 & 0 \\ \hline
+C & 0 & 0 & 289 & 0 & 0 & 21 \\ \hline
+D & 0 & 0 & 0 & 245 & 0 & 0 \\ \hline
+E & 0 & 0 & 0 & 0 & 456 & 0 \\ \hline
+F & 0 & 0 & 1 & 0 & 0 & 209 \\ \hline
+\end{tabular}
+\end{table}
+
+The confusion matrix provides insights into the performance of the model across different classes. The rows represent the true labels, while the columns represent the predicted labels. The diagonal elements indicate the number of correct predictions, while off-diagonal elements show misclassifications.
+
+The full metrix is shown in Table \ref{tab:full_confusion_matrix} 
+
+\subsection{Performance Metrics}
+
+Our model achieved the following performance metrics:
+
+\begin{itemize}
+    \item Overall Test Accuracy: 77.36\%
+    \item Weighted Average F1-score: 0.77
+    \item Macro Average F1-score: 0.75
+\end{itemize}
+
+Performance varied significantly across different letters:
+
+\begin{itemize}
+    \item Best performing letters (F1-score > 0.90):
+    \begin{itemize}
+        \item Letter 'O': 1.00
+        \item Letter 'B': 0.96
+        \item Letter 'C': 0.96
+        \item Letter 'A': 0.94
+    \end{itemize}
+    \item Moderate performance (F1-score 0.80-0.90):
+    \begin{itemize}
+        \item Letter 'D': 0.86
+        \item Letter 'E': 0.92
+        \item Letter 'G': 0.84
+        \item Letter 'H': 0.92
+        \item Letter 'N': 0.89
+    \end{itemize}
+    \item Poor performance (F1-score < 0.60):
+    \begin{itemize}
+        \item Letter 'R': 0.46
+        \item Letter 'Q': 0.55
+        \item Letter 'M': 0.57
+        \item Letter 'S': 0.57
+        \item Letter 'T': 0.51
+    \end{itemize}
+\end{itemize}
+
+The model shows strong performance on simple gestures but struggles with more complex hand positions. Analysis of the results suggests several potential improvements:
+\begin{itemize}
+    \item Data augmentation for underrepresented classes
+    \item Feature engineering to better capture hand gesture details
+    \item Addressing class imbalance in the training data
+    \item Increasing model capacity for more complex patterns
+\end{itemize}
+
+\section{Conclusion}
+
+Our implementation demonstrates the capability of a simple two-layer neural network in recognizing sign language letters, achieving 77.36\% accuracy on the test set. The varying performance across different letters provides insights into the model's strengths and limitations. While some letters are recognized with high accuracy (F1-scores $>$ 0.90), others present challenges, particularly those with more complex hand positions. These results suggest that while our approach provides a solid foundation, there is room for improvement through techniques such as data augmentation, addressing class imbalance, and potentially increasing model complexity.
+
+Beyond the specific application of sign language recognition, the techniques developed in this work can serve as a template for addressing other image classification problems. The use of fundamental machine learning concepts, such as the two-layer neural network architecture, parameter initialization, and optimization techniques, can be extended to a wide range of computer vision tasks. This could include the recognition of other types of hand gestures, facial expressions, or even general object classification, with appropriate adjustments to the model and dataset.
+
+Furthermore, the insights gained from analyzing the model's performance on different sign language letters can inform the design of more robust and versatile recognition systems. Understanding the challenges posed by complex hand gestures can guide future research in feature engineering, data augmentation, and model architecture selection, ultimately leading to improved accessibility and inclusivity in various applications.
+In conclusion, our work demonstrates the continued relevance and potential of traditional neural network approaches in the field of sign language recognition. 
+
+\section{Novelty and Contributions}
+While there have been several prior works on sign language recognition using machine learning techniques, our approach offers some novel elements and potential areas for improvement.
+Previous studies have explored various methods for sign language recognition, including computer vision-based approaches \cite{garg, mitra} and the use of deep convolutional neural networks \cite{kurz2016using}. However, a significant portion of the existing literature, particularly on the Kaggle platform, has focused on implementing solutions using high-level deep learning frameworks like Keras \cite{kurz2016using}.
+In contrast, our work utilizes a more traditional two-layer neural network architecture, implemented from scratch using NumPy and other core Python libraries. This allows us to have a deeper understanding of the underlying mathematical principles and optimization techniques, rather than relying on the abstractions provided by frameworks like Keras.
+By implementing the model using fundamental machine learning concepts, we were able to achieve a test accuracy of 77.36\% on the Sign Language MNIST dataset \cite{datamunge2022}. This performance is comparable to the results reported in the literature, including the work by Kurz et al. using deep convolutional networks \cite{kurz2016using}.
+However, we believe there are opportunities to further improve the model's performance. Some potential areas of exploration include:
+
+\begin{itemize}
+\item \textbf{Data Augmentation}: The dataset exhibits significant class imbalance, with some sign language letters having far fewer samples than others. Applying techniques such as data augmentation, which generates synthetic training examples, could help address this issue and improve the model's generalization capabilities.
+
+\item \textbf{Feature Engineering}: The current approach relies solely on the raw pixel data as input. Exploring feature engineering techniques, such as extracting hand shape, orientation, or motion features, could potentially enhance the model's ability to capture the nuances of different sign language gestures.
+
+\item \textbf{Model Complexity}: While the two-layer architecture provides a good balance between model capacity and computational complexity, increasing the depth or width of the network might lead to better feature extraction and classification performance, especially for more challenging sign language letters.
+
+\item \textbf{Ensemble Methods}: Combining multiple models, either of the same architecture or different architectures, through ensemble techniques could potentially boost the overall classification accuracy by leveraging the strengths of individual models.
+\end{itemize}
+
+By addressing these potential improvements, we believe there is an opportunity to push the state-of-the-art in sign language recognition using traditional machine learning techniques, rather than relying primarily on deep learning frameworks. This could lead to more interpretable and efficient models, while maintaining competitive performance on benchmark datasets like Sign Language MNIST.
+
+\begin{thebibliography}{9}
+\bibitem{cooper} H. Cooper, B. Holt, and R. Bowden, "Sign language recognition," in Visual Analysis of Humans. Springer, 2011, pp. 539-562.
+\bibitem{lecun} Y. LeCun, C. Cortes, and C. J. Burges, "The MNIST database of handwritten digits," 1998. [Online]. Available: http://yann.lecun.com/exdb/mnist/
+\bibitem{garg} P. Garg, N. Aggarwal, and S. Sofat, "Vision based hand gesture recognition," World Academy of Science, Engineering and Technology, vol. 49, no. 1, pp. 972-977, 2009.
+\bibitem{mitra} S. Mitra and T. Acharya, "Gesture recognition: A survey," IEEE Transactions on Systems, Man, and Cybernetics, Part C (Applications and Reviews), vol. 37, no. 3, pp. 311-324, 2007.
+\bibitem{datamunge2022} "Sign Language MNIST Dataset," Kaggle, 2022. [Online]. Available: https://www.kaggle.com/datamunge/sign-language-mnist
+\bibitem{kurz2016using} D. Kurz, P. Beetz, and J. Fisseler, "Using deep convolutional networks for gesture recognition in American sign language," arXiv preprint arXiv:1610.00186, 2016.
+\end{thebibliography}
+
+\onecolumn  % Switch to one-column layout
+\appendix
+\setlength{\tabcolsep}{2pt}  % Reduce column padding
+\begin{table}[ht]
+\centering
+\caption{Full Confusion Matrix for the Classification Model}
+\label{tab:full_confusion_matrix}
+\begin{tabular}{|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|c|}
+\hline
+\textbf{Tr\textbackslash  Pr} & A & B & C & D & E & F & G & H & I & K & L & M & N & O & P & Q & R & S & T & U & V & W & X & Y \\ \hline
+A & 331 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+B & 0 & 396 & 0 & 15 & 0 & 0 & 0 & 0 & 0 & 21 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+C & 0 & 0 & 289 & 0 & 0 & 21 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+D & 0 & 0 & 0 & 245 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+E & 0 & 0 & 0 & 0 & 456 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 42 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+F & 0 & 0 & 1 & 0 & 0 & 209 & 0 & 0 & 0 & 0 & 37 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+G & 0 & 0 & 0 & 0 & 0 & 0 & 298 & 11 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 20 & 0 & 0 & 19 & 0 & 0 & 0 & 0 & 0 \\ \hline
+H & 0 & 0 & 0 & 0 & 0 & 0 & 41 & 394 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 0 \\ \hline
+I & 0 & 0 & 0 & 0 & 0 & 20 & 0 & 0 & 184 & 1 & 0 & 0 & 15 & 0 & 0 & 5 & 21 & 0 & 1 & 0 & 0 & 0 & 0 & 41 \\ \hline
+K & 0 & 0 & 0 & 0 & 0 & 42 & 0 & 17 & 4 & 231 & 0 & 0 & 0 & 0 & 0 & 0 & 21 & 0 & 0 & 14 & 0 & 0 & 0 & 2 \\ \hline
+L & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 209 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+M & 0 & 0 & 0 & 0 & 21 & 0 & 0 & 0 & 0 & 0 & 0 & 275 & 21 & 0 & 0 & 15 & 0 & 59 & 0 & 0 & 0 & 0 & 0 & 3 \\ \hline
+N & 42 & 0 & 0 & 0 & 0 & 0 & 21 & 0 & 0 & 0 & 0 & 21 & 145 & 0 & 0 & 21 & 0 & 20 & 21 & 0 & 0 & 0 & 0 & 0 \\ \hline
+O & 0 & 0 & 0 & 0 & 0 & 6 & 0 & 0 & 0 & 0 & 0 & 0 & 21 & 199 & 0 & 10 & 0 & 0 & 1 & 0 & 0 & 0 & 0 & 9 \\ \hline
+P & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 347 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+Q & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 21 & 0 & 0 & 0 & 143 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+R & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 95 & 0 & 2 & 26 & 21 & 0 & 0 & 0 \\ \hline
+S & 0 & 0 & 0 & 0 & 21 & 0 & 0 & 0 & 24 & 0 & 0 & 41 & 20 & 0 & 0 & 17 & 0 & 120 & 0 & 0 & 0 & 0 & 0 & 3 \\ \hline
+T & 0 & 0 & 0 & 5 & 0 & 0 & 4 & 0 & 2 & 0 & 34 & 0 & 0 & 0 & 0 & 3 & 0 & 0 & 138 & 0 & 0 & 0 & 62 & 0 \\ \hline
+U & 0 & 0 & 0 & 35 & 0 & 0 & 0 & 0 & 0 & 51 & 4 & 0 & 0 & 0 & 0 & 0 & 22 & 0 & 0 & 122 & 20 & 0 & 0 & 12 \\ \hline
+V & 0 & 0 & 0 & 24 & 0 & 20 & 0 & 0 & 0 & 18 & 2 & 0 & 0 & 0 & 0 & 3 & 17 & 0 & 17 & 25 & 166 & 54 & 0 & 0 \\ \hline
+W & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 20 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+X & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+Y & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+\end{tabular}
+\end{table}
+
+\end{document}
